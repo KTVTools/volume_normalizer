@@ -172,11 +172,8 @@ def StartCMD():
                             logarea.insert(tk.END, 'skipping '+fileitem+'\n')
                             continue        
                     progressbar_update('processing '+fileitem, cur_item*100/total_items)
-                    if (fileitem.lower().find('_vr')>=0):
-                        vocal_ch=1
-                    else:
-                        vocal_ch=0
-                    result=normalizer_core.volume_normalize(fullpath, Ftmpdir, FGnMax, vocal_ch)
+                    
+                    result=normalizer_core.volume_normalize(dirpath, filename, fileext, FGnMax)
                     if result=='':
                         logarea.insert(tk.END, 'error on "'+fileitem+'"\n')
                     else:

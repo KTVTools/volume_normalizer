@@ -49,17 +49,17 @@ def read_mediainfo(filename):
     # audio_len : stream length in seconds
     return [audio_no, audio_len]
 
-def calculate_replaygain(infile, audio_no, vocal_ch):
+def calculate_replaygain(infile, audio_no, kara_ch):
     if (audio_no==1):  # only 1 audio stream
-        if (vocal_ch==0):   # if vocal on 0, kara is on RIGHT
-            param='-filter_complex "[0:a]pan=stereo|c0=c1|c1=c1[out];[out]replaygain" -f null nul'
-        else:
+        if (kara_ch==0):   
             param='-filter_complex "[0:a]pan=stereo|c0=c0|c1=c0[out];[out]replaygain" -f null nul'
-    else:
-        if (vocal_ch==0):   # if vocal is on 0, kara is on 1
-            param='-af replaygain -map 0:a:1 -f null nul'
         else:
+            param='-filter_complex "[0:a]pan=stereo|c0=c1|c1=c1[out];[out]replaygain" -f null nul'
+    else:
+        if (kara_ch==0):   
             param='-af replaygain -map 0:a:0 -f null nul'
+        else:
+            param='-af replaygain -map 0:a:1 -f null nul'
             
     cmdlist=ffmpegcmd+' -i "'+infile+'" '+param
     print(cmdlist)
@@ -179,19 +179,28 @@ def remove_file(infile):
 #   clip_start : clip starting point
 #   clip_duration : duration of the clip
 # output : '' when error, _VL_VR string if analysis ok
-def volume_normalize(fullpath, tmpdir, GnMax, vocal_ch):
-    print(fullpath, GnMax, vocal_ch)
+def volume_normalize(dirpath, filename, fileext, GnMax):
+    fullpath=dirpath+'/'+filename+fileext
+   
+    if (filename.lower().find('_vr')>0):
+        kara_ch=0   # if voice is on RIGHT, kara is on LEFT
+    else:
+        kara_ch=1
+                        
     [audio_no, audio_len]=read_mediainfo(fullpath)
     if audio_no==0:
         print("no audio stream in ",fullpath)
         return ''
-    
-    db=calculate_replaygain(fullpath, audio_no, vocal_ch)
+    print(fullpath, GnMax, kara_ch)
+    db=calculate_replaygain(fullpath, audio_no, kara_ch)
     print('replaygain=', db)
     if db==0.0:
         return ''
-    gain=str(int(100*db_to_val(db))).zfill(3)
-    return gain
+    gain=db_to_val(db)
+    if (gain>GnMax):
+        print("need adjustment")
+    gain_str=str(int(100*gain)).zfill(3)
+    return gain_str
 
 def vocal_analyze(fullpath, tmpdir, vl_str, clip_start, clip_duration):
     [audio_no, audio_len]=read_mediainfo(fullpath)
