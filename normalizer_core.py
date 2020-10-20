@@ -51,13 +51,13 @@ def read_mediainfo(filename):
 
 def calculate_replaygain(infile, audio_no, vocal_ch):
     if (audio_no==1):  # only 1 audio stream
-        if (vocal_ch==0):
-            param='-filter_complex "[0:a]pan=stereo|c0=c0|c1=c0[out];[out]replaygain" -f null nul'
-        else:
+        if (vocal_ch==0):   # if vocal on 0, kara is on RIGHT
             param='-filter_complex "[0:a]pan=stereo|c0=c1|c1=c1[out];[out]replaygain" -f null nul'
+        else:
+            param='-filter_complex "[0:a]pan=stereo|c0=c0|c1=c0[out];[out]replaygain" -f null nul'
     else:
-        if (vocal_ch==0):
-            param='-af replaygain -map 0:a:0 -f null nul'
+        if (vocal_ch==0):   # if vocal is on 0, kara is on 1
+            param='-af replaygain -map 0:a:1 -f null nul'
         else:
             param='-af replaygain -map 0:a:0 -f null nul'
             
@@ -68,9 +68,15 @@ def calculate_replaygain(infile, audio_no, vocal_ch):
     except subprocess.CalledProcessError as e:
         print("error on ch0 replaygain")
         return 0.0
-    gain_str = str(result).find('track_gain')
+    
+    if (audio_no==1):
+        gain_str = str(result).find('track_gain') # single channel need search twice
+    else:
+        gain_str = 0
+    gain_str = str(result).find('track_gain', gain_str+10)
     db_str = str(result).find('dB', gain_str)
     ch_db = float(str(result)[gain_str+13:db_str-1])
+    # print(str(result), gain_str, db_str)
     return ch_db
     
 def generate_audio_files(infile, audio_no, tmp_dir, c_start, c_duration):
@@ -173,8 +179,8 @@ def remove_file(infile):
 #   clip_start : clip starting point
 #   clip_duration : duration of the clip
 # output : '' when error, _VL_VR string if analysis ok
-def volume_normalize(fullpath, tmpdir, vocal_ch, GnMax):
-    print(fullpath, GnMax)
+def volume_normalize(fullpath, tmpdir, GnMax, vocal_ch):
+    print(fullpath, GnMax, vocal_ch)
     [audio_no, audio_len]=read_mediainfo(fullpath)
     if audio_no==0:
         print("no audio stream in ",fullpath)
