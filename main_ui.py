@@ -72,6 +72,7 @@ filedirLen = 60
 filedirEntry = ttk.Entry(area_config, width=filedirLen,textvariable=filedir)
 filedirEntry.grid(column=1, row=0, sticky=tk.W)
 
+'''
 def gettempDirName():
     fDir = os.path.dirname(os.path.abspath('__file__'))
     fName = fd.askdirectory(parent=win, title='choose temp file dir', initialdir=fDir)
@@ -84,6 +85,7 @@ tempdir.set((os.path.dirname(os.path.abspath('__file__'))).replace('\\','/'))
 tempdirLen = 60
 tempdirEntry = ttk.Entry(area_config, width=tempdirLen,textvariable=tempdir)
 tempdirEntry.grid(column=1, row=1, sticky=tk.W)
+'''
 
 # vocal string setting part
 area_volumeparam = ttk.LabelFrame(tab1, text=' 參數設定 ')
@@ -126,7 +128,7 @@ def StartCMD():
     
     # freeze the current setting, so the value will not be changed when UI changes
     Fsrcdir=filedir.get().replace('\\','/').rstrip('/')
-    Ftmpdir=tempdir.get().replace('\\','/').rstrip('/')
+    #Ftmpdir=tempdir.get().replace('\\','/').rstrip('/')
     FSkipFileEn=SkipFileEn.get()
     FGnMax = float(GnMax.get())
         

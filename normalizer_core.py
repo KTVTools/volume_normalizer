@@ -16,6 +16,8 @@ ffmpegcmd="ffmpeg.exe"
 mediainfocmd="mediainfo.exe"
 spleetercmd="python\python.exe -m spleeter separate "
 
+MP3BITRATE='256k'
+
 def db_to_val(db):
     return(10.0**(db/20.0))
 
@@ -67,7 +69,7 @@ def calculate_replaygain(infile, audio_no, kara_ch):
         result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         print("error on ch0 replaygain")
-        return 0.0
+        return [0.0, 0.0]
     
     if (audio_no==1):
         gain_str = str(result).find('track_gain') # single channel need search twice
@@ -76,33 +78,83 @@ def calculate_replaygain(infile, audio_no, kara_ch):
     gain_str = str(result).find('track_gain', gain_str+10)
     db_str = str(result).find('dB', gain_str)
     ch_db = float(str(result)[gain_str+13:db_str-1])
-    # print(str(result), gain_str, db_str)
-    return ch_db
+    peak_str = str(result).find('track_peak', db_str)
+    tmp_str=str(result)[peak_str+13:-1].replace('\\n','\n').replace('\\r','\r')
+    ch_peak = float(tmp_str.rstrip())
     
-def generate_audio_files(infile, audio_no, tmp_dir, c_start, c_duration):
-    if (c_start<0) or (c_duration<0):
-        clip_str=''     # whole song without clipping
-    else:
-        clip_str=" -ss "+str(c_start)+" -t "+str(c_duration)
+    return [ch_db, ch_peak]
 
-    if (audio_no==1):  # has only 1 audio stream, turn L/R into CH0, CH1 wav
-        cmdlist=ffmpegcmd+clip_str+' -i "'+infile+\
-            '" -filter_complex "[0:a]pan=stereo|c0=c0|c1=c0[out]" -map "[out]" -y "'+\
-            tmp_dir+'/ch0.wav"'
-        run_cmd(cmdlist, "error on generate ch0.wav :"+cmdlist)
-        cmdlist=ffmpegcmd+clip_str+' -i "'+infile+\
-            '" -filter_complex "[0:a]pan=stereo|c0=c1|c1=c1[out]" -map "[out]" -y "'+\
-            tmp_dir+'/ch1.wav"'
-        run_cmd(cmdlist, "error on generate ch1.wav :"+cmdlist)
+def determine_adj_db(ch_kara, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak):
+# return values :
+#   need_adj ? : need adjustment or nor
+#   ch0_adj    : volume scale for ch0
+#   ch1_adj    : volume scale for ch1   
+    gain0_val=db_to_val(ch0_db)
+    gain1_val=db_to_val(ch1_db) 
+    print(gain0_val, gain1_val, ch0_peak, ch1_peak)
+    if (ch_kara==0) and (gain0_val>GnMax):
+        # adjust volume based on channel 0
+        # test if gain value will overflow either channel
+        if (ch0_peak*gain0_val>1.0) or (ch1_peak*gain0_val>1.0):
+            # overflow, we can only choose to use less gain
+            if (ch0_peak>ch1_peak):
+                max_gain=0.9999/(ch0_peak)
+            else:
+                max_gain=0.9999/(ch1_peak)
+
+            if (gain0_val-max_gain<GnMax):
+                # adjust a little
+                print('adjust less :', max_gain)
+                return [True, max_gain, max_gain]
+            else:
+                # after adjustment, the volume is still to small
+                return [False, gain0_val, 1.0]
+        else:
+            # it's ok to adjust both channels to new volume level
+            print('adjust full :', gain0_val)
+            return [True, gain0_val, gain0_val]
+  
+    elif (ch_kara==1) and (gain1_val>GnMax):
+        # adjust volume based on channel 1
+        # test if gain value will overflow both channel
+        if (ch0_peak*gain1_val>1.0) or (ch1_peak*gain1_val>1.0):
+            # overflow, we can only choose to use less gain
+            if (ch0_peak>ch1_peak):
+                max_gain=0.9999/ch0_peak
+            else:
+                max_gain=0.9999/ch1_peak
+
+            if (gain1_val-max_gain<GnMax):  # after adjustment, within threshold
+                # then we will adjust both channel
+                print('adjust less :', max_gain)
+                return [True, max_gain, max_gain]
+            else:
+                # after adjustment, the volume is still too small
+                return [False, 1.0, gain1_val]                      
+        else:
+            # it's ok to adjust both channels, after adjustment, replaygain=0
+            print('adjust full :', gain1_val)
+            return[ True, gain1_val, gain1_val]
+   
     else:
-        cmdlist=ffmpegcmd+clip_str+' -i "'+infile+\
-            '" -filter_complex "[0:a:0]pan=stereo|c0=FL|c1=FR[out]" -map "[out]" -y "'+\
-            tmp_dir+'/ch0.wav"'
-        run_cmd(cmdlist, "error on generate ch0.wav :"+cmdlist)
-        cmdlist=ffmpegcmd+clip_str+' -i "'+infile+\
-            '" -filter_complex "[0:a:1]pan=stereo|c0=FL|c1=FR[out]" -map "[out]" -y "'+\
-            tmp_dir+'/ch1.wav"'
-        run_cmd(cmdlist, "error on generate ch1.wav :"+cmdlist)
+        return [False, 0.0, 0.0]
+        
+    
+def adj_volume(org_fullpath, fullpath, audio_no, ch0_adj, ch1_adj):
+    print("adj volume ch0=", ch0_adj, "ch1=", ch1_adj)
+    if audio_no==1:
+        param='-map 0:a -af "volume='+str(ch0_adj)+'" -c:a libmp3lame -b:a '+MP3BITRATE
+    else:
+        param='-map 0:a:0 -af "volume='+str(ch0_adj)+'" -c:a libmp3lame -b:a '+MP3BITRATE+\
+              ' -map 0:a:1 -af "volume='+str(ch1_adj)+'" -c:a libmp3lame -b:a '+MP3BITRATE
+    cmdlist = ffmpegcmd+' -i "'+org_fullpath+'" -map 0:v -c:v copy '+param+' "'+fullpath+'"'
+    print(cmdlist)
+    try:
+        result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        print("error on adj volume")
+        return False
+    return True
 
 def run_cmd(cmdstr, errorstr):
     try:
@@ -111,52 +163,6 @@ def run_cmd(cmdstr, errorstr):
         print(errorstr)
         return False
     return True
-
-# calculate vocal gain in tmp_dir/ch0.wav and ch1.wav
-def calculate_vocal_gain(tmp_dir):
-    # generate vocal files of channel by Spleeter
-    cmdlist=spleetercmd+' -i "'+tmp_dir+'/ch0.wav"'+\
-        ' -o "'+tmp_dir+'/output"'
-    if run_cmd(cmdlist, 'error on L vocal:'+cmdlist)==False:
-        return[0.0, 0.0]
-
-    #  using ffmpeg to get replaygain of vocal files
-    cmdlist=ffmpegcmd+' -i "'+tmp_dir+'/output/ch0/vocals.wav"'+\
-        ' -af replaygain -f null nul'
-    try:
-        result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        print("error on ch0 replaygain")
-        remove_file(tmp_dir+'/output/ch0/accompaniment.wav')
-        remove_file(tmp_dir+'/output/ch0/vocals.wav')
-        return [0.0, 0.0]
-    gain_str = str(result).find('track_gain')
-    db_str = str(result).find('dB', gain_str)
-    ch0_db = float(str(result)[gain_str+13:db_str-1])
-    remove_file(tmp_dir+'/output/ch0/accompaniment.wav')
-    remove_file(tmp_dir+'/output/ch0/vocals.wav')
-    
-    # process ch1
-    cmdlist=spleetercmd+' -i "'+tmp_dir+'/ch1.wav"'+\
-        ' -o "'+tmp_dir+'/output"'
-    if run_cmd(cmdlist, 'error on R vocal:'+cmdlist)==False:
-        return[0.0, 0.0]
-    
-    cmdlist=ffmpegcmd+' -i "'+tmp_dir+'/output/ch1/vocals.wav"'+\
-        ' -af replaygain -f null nul'
-    try:
-        result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        print("error on ch1 replaygain")
-        remove_file(tmp_dir+'/output/ch1/accompaniment.wav')
-        remove_file(tmp_dir+'/output/ch1/vocals.wav')
-        return [0.0, 0.0]
-    gain_str = str(result).find('track_gain')
-    db_str = str(result).find('dB', gain_str)
-    ch1_db = float(str(result)[gain_str+13:db_str-1])
-    remove_file(tmp_dir+'/output/ch1/accompaniment.wav')
-    remove_file(tmp_dir+'/output/ch1/vocals.wav')
-    return [ch0_db, ch1_db]
 
 def remove_tmp_dir_audiofiles(tmp_dir):
     remove_file(tmp_dir+'/ch0.wav')
@@ -172,13 +178,21 @@ def remove_file(infile):
     cmdlist=tmplist.replace('/','\\')
     run_cmd(cmdlist, "error on remove file:"+cmdlist)
 
-# analyze the vocal channel
-#   fullpath : the source file path
-#   tmpdir : directory for audio temp files during analysis
-#   vl_str : _VL_VR string 
-#   clip_start : clip starting point
-#   clip_duration : duration of the clip
-# output : '' when error, _VL_VR string if analysis ok
+'''
+    volume_normalize : this function will calculate
+        the replaygain of non-vocal(kara) stream.
+        1. replaygain is within Maximum gain :
+           rename the file name directly with _gnXXX XXX=000-999
+           XXX value is for another program to set default volume
+           in KTV database
+        2. replaygain is larger than Maximum gain and adjustable
+           the program will try to adjust volume to replaygain level.
+           The original file will be prefixed with _ORG_,
+           and the new file with new volume level will be generated
+        3. replaygain is too large even maximum gain is applied
+           the file will be prefixed with _ERR_
+        
+'''
 def volume_normalize(dirpath, filename, fileext, GnMax):
     fullpath=dirpath+'/'+filename+fileext
    
@@ -192,42 +206,41 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
         print("no audio stream in ",fullpath)
         return ''
     print(fullpath, GnMax, kara_ch)
-    db=calculate_replaygain(fullpath, audio_no, kara_ch)
+    [db, peak]=calculate_replaygain(fullpath, audio_no, kara_ch)
     print('replaygain=', db)
     if db==0.0:
         return ''
     gain=db_to_val(db)
     if (gain>GnMax):
         print("need adjustment")
+        if (kara_ch==0):
+            ch0_db=db
+            ch0_peak=peak
+            [ch1_db, ch1_peak]=calculate_replaygain(fullpath, audio_no, 1)
+        else:
+            ch1_db=db
+            ch1_peak=peak
+            [ch0_db, ch0_peak]=calculate_replaygain(fullpath, audio_no, 0)
+            
+        [need_adj, ch0_adj, ch1_adj] = determine_adj_db(kara_ch, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak)
+        if not need_adj:
+            print("cannot find suitable volume !!! ch0=", ch0_adj, "ch1=", ch1_adj,"\n")
+            err_filename='_ERR_'+filename+fileext
+            rename_file(fullpath, err_filename)  # rename the file with '_ERR_"
+            return ''
+        org_filename='_ORG_'+filename+fileext
+        org_fullpath=dirpath+'/'+org_filename
+        
+        rename_file(fullpath, org_filename) # rename orginal file with '_ORG_'
+        print("rename ",fullpath," into ", org_filename)
+        if not adj_volume(org_fullpath, fullpath, audio_no, ch0_adj, ch1_adj):
+            return ''
+        [db, peak]=calculate_replaygain(fullpath, audio_no, kara_ch)
+        gain=db_to_val(db)
+        
     gain_str=str(int(100*gain)).zfill(3)
+    new_filename=filename+'_gn'+gain_str+fileext
+    rename_file(fullpath, new_filename)
+    print("rename ", fullpath, " into ", new_filename)
+    
     return gain_str
-
-def vocal_analyze(fullpath, tmpdir, vl_str, clip_start, clip_duration):
-    [audio_no, audio_len]=read_mediainfo(fullpath)
-    if audio_no==0:
-        print("no audio stream in ",fullpath)
-        return ''
-    c_start = int(audio_len * clip_start)
-    c_duration = int(audio_len*clip_duration)
-    if (c_start+c_duration)>audio_len:    # sanity check
-        c_duration = audio_len - c_start
-    if (clip_start==0.0) and (clip_duration==1.0):  # whole song case
-        c_start=-1
-        c_duration=-1
-    generate_audio_files(fullpath, audio_no, tmpdir, c_start, c_duration)
-    [ch0_v_gn, ch1_v_gn] = calculate_vocal_gain(tmpdir)
-    remove_tmp_dir_audiofiles(tmpdir)
-    if (ch0_v_gn==0.0) or (ch1_v_gn==0.0):
-        print("error on getting vocal replaygain", fullpath)
-        return ''
-    if (ch0_v_gn>ch1_v_gn):  # vl_str contains [VCD_VL, VCD_VR, DVD_VL, DVD_VR] string
-        if (audio_no==1):  #  channel 1 voice is louder, _VR
-            ch_str=vl_str[1]  # VCD_VR
-        else:
-            ch_str=vl_str[3]  # DVD_VR
-    else:
-        if (audio_no==1):  #  channel 0 voice is louder, _VL
-            ch_str=vl_str[0]  # VCD_VL
-        else:
-            ch_str=vl_str[2]  # DVD_VL
-    return ch_str
