@@ -224,7 +224,7 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
             
         [need_adj, ch0_adj, ch1_adj] = determine_adj_db(kara_ch, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak)
         if not need_adj:
-            print("cannot find suitable volume !!! ch0=", ch0_adj, "ch1=", ch1_adj,"\n")
+            print("ERR : cannot find suitable volume !!! ch0=", ch0_adj, "ch1=", ch1_adj,"\n")
             err_filename='_ERR_'+filename+fileext
             rename_file(fullpath, err_filename)  # rename the file with '_ERR_"
             return ''
@@ -234,9 +234,14 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
         rename_file(fullpath, org_filename) # rename orginal file with '_ORG_'
         print("rename ",fullpath," into ", org_filename)
         if not adj_volume(org_fullpath, fullpath, audio_no, ch0_adj, ch1_adj):
+            rename_file(org_fullpath, '_ERR'+org_filename)
             return ''
         [db, peak]=calculate_replaygain(fullpath, audio_no, kara_ch)
         gain=db_to_val(db)
+        if (gain>GnMax):
+            print("Error : after adjustment, the gain ",gain,"is still over Max",GnMax)
+            rename_file(org_fullpath, '_ERR'+org_filename)
+            return ''
         
     gain_str=str(int(100*gain)).zfill(3)
     new_filename=filename+'_gn'+gain_str+fileext

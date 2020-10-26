@@ -28,6 +28,7 @@ from datetime import datetime
 from io import StringIO
 import sqlite3
 import math
+import pyodbc
 import normalizer_core
 
 VERSION_INFO='1.0.0'
@@ -237,6 +238,82 @@ status_line_l.grid(column=1, row=0, sticky=tk.W)
 ttk.Label(area_status, text="進度 :").grid(column=0, row=1, sticky=tk.W)
 progress_b = ttk.Progressbar(area_status, orient='horizontal', length=540, mode='determinate')
 progress_b.grid(column=1, row=1)
+
+#
+#  Tab 3 : update KTV database file
+#
+#
+# database area
+#
+area_database = ttk.LabelFrame(tab3, text=' 資料庫設定 ')
+area_database.grid(column=0, row=0, padx=10, pady=10, sticky=tk.W)
+# ------------------- 輸入資料庫檔案 ------------
+def getDatabaseFileName():
+    fDir = os.path.dirname('__file__')
+    fName = fd.askopenfilename(parent=win, title='select database file', initialdir=fDir)
+    dbfilename.set(fName)
+    
+ttk.Button(area_database, text="資料庫檔案", command=getDatabaseFileName).grid(column=0, row=0, padx=10, pady=10, sticky=tk.W)
+dbfilename = tk.StringVar()
+dbfilenameLen = 60
+dbfileEntry = ttk.Entry(area_database, width=dbfilenameLen,textvariable=dbfilename)
+dbfileEntry.grid(column=1, row=0, sticky=tk.W)
+
+# ------------------- 預設音量設定 ----------
+defaultGN = tk.StringVar()
+defaultGN.set('50')
+ttk.Label(area_database, text="預設音量基準:").grid(column=0, row=1, sticky=tk.W)
+ttk.Spinbox(area_database, from_=1, to=99, increment=1, justify=tk.CENTER, textvariable=defaultGN).grid(column=1, row=1, padx=10, pady=10,sticky=tk.W)
+
+# ------------------- 開始更新資料庫 --------
+def MissingFileErrBox():
+    msg.showinfo('錯誤 ', '找不到資料庫檔案\n請先設定好資料庫檔案')
+
+def find_gn(filename):
+    fname=filename.lower()
+    gnpos=fname.find('_gn')
+    if gnpos<=0:
+        return 0    # not found
+    gnpos=gnpos+3
+    gnvalue=0
+    while ((fname[gnpos]>='0') and (fname[gnpos]<='9')):
+        gnvalue=gnvalue*10+int(fname[gnpos])
+        gnpos=gnpos+1
+    return gnvalue
+    
+def updateDatabaseFile():
+    if not (os.path.isfile(dbfilename.get())):
+        MissingFileErrBox()
+        return
+    conn = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=d:/temp/crazyktv/crazysong.mdb;')
+    cursor = conn.cursor()
+    cursor.execute('select * from ktv_Song')
+    
+    gn_notfound_cnt=0
+    gn_scaleover_cnt=0
+    gn_valueover_cnt=0
+    for row in cursor.fetchall():
+        gnscale = find_gn(row[10])
+        if gnscale>999:
+            gnscale=999
+            gn_scaleover_cnt=gn_scaleover_cnt+1
+        if gnscale==0:
+            gnvalue=int(defaultGN.get())
+            gn_notfound_cnt=gn_notfound_cnt+1
+        else:
+            gnvalue=int(int(defaultGN.get())*float(gnscale)/100.0)
+            if gnvalue>99:
+                gnvalue=99
+                gn_valueover_cnt=gn_valueover_cnt+1
+            
+        cmd = "update ktv_Song set Song_Volume = "+str(gnvalue)+" where Song_Id = '"+row[1]+"'"
+        print(cmd, gnscale)    
+        cursor.execute(cmd)
+    cursor.commit() 
+    print("gain adjustment -\n not found:",gn_notfound_cnt,\
+          "\n scale overflow:",gn_scaleover_cnt,"\n value overflow:",gn_valueover_cnt)
+          
+ttk.Button(area_database, text="更新資料庫", command=updateDatabaseFile).grid(column=1, row=2, padx=10, pady=10, sticky=tk.W)
 
 #######################################
 # main menu part
