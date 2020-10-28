@@ -73,20 +73,6 @@ filedirLen = 60
 filedirEntry = ttk.Entry(area_config, width=filedirLen,textvariable=filedir)
 filedirEntry.grid(column=1, row=0, sticky=tk.W)
 
-'''
-def gettempDirName():
-    fDir = os.path.dirname(os.path.abspath('__file__'))
-    fName = fd.askdirectory(parent=win, title='choose temp file dir', initialdir=fDir)
-    if fName :
-        tempdir.set(fName)
-    
-ttk.Button(area_config, text="暫存檔目錄", command=gettempDirName).grid(column=0, row=1, sticky=tk.W)
-tempdir = tk.StringVar()
-tempdir.set((os.path.dirname(os.path.abspath('__file__'))).replace('\\','/'))
-tempdirLen = 60
-tempdirEntry = ttk.Entry(area_config, width=tempdirLen,textvariable=tempdir)
-tempdirEntry.grid(column=1, row=1, sticky=tk.W)
-'''
 
 # vocal string setting part
 area_volumeparam = ttk.LabelFrame(tab1, text=' 參數設定 ')
@@ -94,7 +80,7 @@ area_volumeparam.grid(column=0, row=2, padx=8, pady=4, sticky=tk.W)
 
 GnMax = tk.StringVar()
 GnMax.set('2.0')
-ttk.Label(area_volumeparam, text="免調整最大增益值:").grid(column=0, row=0, sticky=tk.W)
+ttk.Label(area_volumeparam, text="免調音量最大增益值:").grid(column=0, row=0, sticky=tk.W)
 ttk.Spinbox(area_volumeparam, from_=1.0, to=5.0, increment=0.1, justify=tk.CENTER, textvariable=GnMax).grid(column=1, row=0, sticky=tk.W)
 
 
@@ -345,35 +331,35 @@ def help_Box():
                  '   │ 目錄設定 │\n'+\
                  '   └──────┘\n'+\
                  '[來源目錄]: 指定待處理影片所在目錄\n'+\
-                 '[暫存檔目錄]: 指定處理影片時,暫存檔使用的目錄\n'+\
-                 '              若指定於 ramdisk, 建議要有 500MB 可使用空間\n\n'+\
+                 '\n'+\
                  '   ┌─────────┐\n'+\
                  '   │ 人聲字串指定  │\n'+\
                  '   └─────────┘\n'+\
-                 '  針對單音軌(左右聲道)與多重音軌(第一第二音軌)\n'+\
-                 '  偵測出人聲的聲道後,加入檔名的字串定義\n'+\
-                 '  建議單音軌左聲道為人聲, 使用字串 _vL, 多重音軌第一軌人聲, 使用 _VL\n'+\
-                 '  就可以用字串來辨別是單音軌或多音軌,\n'+\
-                 '  若有特殊原因需要更改定義, 請自行勾選不同字串\n\n'+\
-                 '   ┌─────────┐\n'+\
-                 '   │ 分析區間設定  │\n'+\
-                 '   └─────────┘\n'+\
-                 '  人聲分離過程, 需要花很多時間, 其實只要分析歌曲其中一部分,\n'+\
-                 '  裏頭有包含人聲部分, 就可以正確判斷出人聲的音軌,\n'+\
-                 '  分析區間設定, 用來設定要拿歌曲那一個區間做分析\n\n'+\
-                 '   ┌──────┐\n'+\
-                 '   │ 輸出設定 │\n'+\
-                 '   └──────┘\n'+\
-                 '[略過已有_vL_vR檔案]: 若檔名已經有 _vL 或 _vR 的識別字串\n'+\
-                 '                        就不再處理這檔案\n'+\
-                 '[輸出選擇] : 選擇判斷結果的輸出,\n'+\
-                 '     [純測試不輸出]: 結果只輸出到狀態視窗, 不影響檔名\n'+\
-                 '     [直接修改檔名]: 將判斷結果的 _vL _vR 字串,直接更新到檔名.\n'+\
-                 '     [輸出到BAT檔] : 將修改檔名的動作改存到 .bat 檔案,\n'+\
-                 '                     讓使用者再自行執行 .bat 檔案更改檔名\n'+\
-                 '[指定BAT檔] : 設定 .bat 檔的檔名, 若上方選擇 [輸出到BAT檔]\n'+\
-                 '              就會將結果輸出到此指定的 BAT 檔中\n' )
-                 
+                 '[免調音量最大增益值] : 若音量需要調整的倍數,小於此值時\n'+\
+                 '                       不會重新壓縮音軌調整音量, 若大於此值\n'+\
+                 '                       就會重新壓縮音軌, 原始檔案會在檔名前\n'+\
+                 '                       加上 _ORG_ 保留, 原檔名會被蓋寫為\n'+\
+                 '                       調整過音量的檔案\n'+\
+                 '[略過已有_gn檔案] : 若檔名中已有 _gn, 則不處理此檔案\n\n'+\
+                 '   ┌────────┐\n'+\
+                 '   │ 資料庫設定   │\n'+\
+                 '   └────────┘\n'+\
+                 '[資料庫檔案] : 選擇 Crazy KTV 的 CrazySong.mdb 檔案\n'+\
+                 '[預設音量基準] : 在  Crazy KTV 中每首歌曲基準的音量值\n'+\
+                 '                 實際設定到 CrazySong.mdb 的音量,會是\n'+\
+                 '                 從檔名中 _gnXXX 抓出 XXX 的數值, 然後以\n'+\
+                 '                 預設音量 * XXX / 100 的方式算出最終音量\n'+\
+                 '                 例如歌曲為 _gn125, 基準音量設定為 50,\n'+\
+                 '                 此歌在資料庫中音量為 50*125/100=62.5\n'+\
+                 '[更新資料庫] : 開始根據預設音量基準及每首歌 _gn數值,更新資料庫\n\n'+\
+                 '  程式的動作為 :\n'+\
+                 '  - 先判斷須調整的音量增益\n'+\
+                 '  - 如果低於[免調音量最大增益值],則直接將增益值_gnXXX串到檔名後\n'+\
+                 '  - 如果高於[免調音量最大增益值],就會重新壓縮音軌,\n'+\
+                 '    盡量調整到 replaygain 的 -89dB 基準,\n'+\
+                 '    原始檔案會在檔名前加上 _ORG_ 保留, 若是壓縮過程有錯,\n'+\
+                 '    或者調整過後的音量增益還是太大, 就在檔名前加 _ERR_\n\n')
+     
 # Add another Menu to the Menu Bar and an item
 help_menu = Menu(menu_bar, tearoff=0)
 help_menu.add_command(label="Help", command=help_Box)
