@@ -3,6 +3,13 @@
  This module provide the analysis core of the voice channel
  
  version : 1.0.0  2020/10/19
+ version : 1.0.1  2020/12/08
+           fix determine_adj_db(), if after adj, gain is still not enough,
+           adjust to the max gain not to overflow both channel.
+           _OVR will be added if the gain is still larger than GnMax
+                the final adjusted file will be gernerate with _gnXXX
+           _ERR0 _ERR1 will be added to file name if ERROR happened, and
+                no adjusted file will be generated 
 ''' 
 
 import os
@@ -64,7 +71,7 @@ def calculate_replaygain(infile, audio_no, kara_ch):
             param='-af replaygain -map 0:a:1 -f null nul'
             
     cmdlist=ffmpegcmd+' -i "'+infile+'" '+param
-    print(cmdlist)
+    #print(cmdlist)
     try:
         result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
@@ -92,23 +99,32 @@ def determine_adj_db(ch_kara, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak):
     gain0_val=db_to_val(ch0_db)
     gain1_val=db_to_val(ch1_db) 
     print(gain0_val, gain1_val, ch0_peak, ch1_peak)
+    # sanity check, in some cases, peak is greater then 1.0, abnormal
+    if ch0_peak>1.0:
+        ch0_peak=1.0
+    if ch1_peak>1.0:
+        ch1_peak=1.0
     if (ch_kara==0) and (gain0_val>GnMax):
         # adjust volume based on channel 0
         # test if gain value will overflow either channel
         if (ch0_peak*gain0_val>1.0) or (ch1_peak*gain0_val>1.0):
             # overflow, we can only choose to use less gain
             if (ch0_peak>ch1_peak):
-                max_gain=0.9999/(ch0_peak)
+                max_gain=0.999999/(ch0_peak)
             else:
-                max_gain=0.9999/(ch1_peak)
-
-            if (gain0_val-max_gain<GnMax):
+                max_gain=0.999999/(ch1_peak)
+            print(gain0_val, max_gain, GnMax)
+            # when peak=1, new_gain=org_gain*org_peak=org_gain/(max_gain)
+            if (gain0_val/max_gain)<GnMax:
                 # adjust a little
                 print('adjust less :', max_gain)
                 return [True, max_gain, max_gain]
             else:
-                # after adjustment, the volume is still to small
-                return [False, gain0_val, 1.0]
+                # after adjustment, the volume is still to small, 
+                # adjust to the max based on ch0(ch1 may overflow)
+                # return [True, 0.999999/ch0_peak, 0.999999/ch0_peak]
+                # adjust a little, peak will not overflow, but gain will be higher
+                return [True, max_gain, max_gain]
         else:
             # it's ok to adjust both channels to new volume level
             print('adjust full :', gain0_val)
@@ -120,17 +136,19 @@ def determine_adj_db(ch_kara, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak):
         if (ch0_peak*gain1_val>1.0) or (ch1_peak*gain1_val>1.0):
             # overflow, we can only choose to use less gain
             if (ch0_peak>ch1_peak):
-                max_gain=0.9999/ch0_peak
+                max_gain=0.999999/ch0_peak
             else:
-                max_gain=0.9999/ch1_peak
-
-            if (gain1_val-max_gain<GnMax):  # after adjustment, within threshold
+                max_gain=0.999999/ch1_peak
+            # when peak=1, new_gain=org_gain*org_peak=org_gain/(max_gain)
+            if (gain1_val/max_gain)<GnMax:  # after adjustment, within threshold
                 # then we will adjust both channel
                 print('adjust less :', max_gain)
                 return [True, max_gain, max_gain]
             else:
                 # after adjustment, the volume is still too small
-                return [False, 1.0, gain1_val]                      
+                # return [True, 0.999999/ch1_peak, 0.999999/ch1_peak] 
+                # adjust a little, peak will not overflow, but gain will be higher
+                return [True, max_gain, max_gain]                
         else:
             # it's ok to adjust both channels, after adjustment, replaygain=0
             print('adjust full :', gain1_val)
@@ -148,7 +166,7 @@ def adj_volume(org_fullpath, fullpath, audio_no, ch0_adj, ch1_adj):
         param='-map 0:a:0 -af "volume='+str(ch0_adj)+'" -c:a libmp3lame -b:a '+MP3BITRATE+\
               ' -map 0:a:1 -af "volume='+str(ch1_adj)+'" -c:a libmp3lame -b:a '+MP3BITRATE
     cmdlist = ffmpegcmd+' -i "'+org_fullpath+'" -map 0:v -c:v copy '+param+' "'+fullpath+'"'
-    print(cmdlist)
+    #print(cmdlist)
     try:
         result = subprocess.check_output(cmdlist, shell=True, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
@@ -205,7 +223,7 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
     if audio_no==0:
         print("no audio stream in ",fullpath)
         return ''
-    print(fullpath, GnMax, kara_ch)
+    #print(fullpath, GnMax, kara_ch)
     [db, peak]=calculate_replaygain(fullpath, audio_no, kara_ch)
     print('replaygain=', db)
     if db==0.0:
@@ -225,7 +243,7 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
         [need_adj, ch0_adj, ch1_adj] = determine_adj_db(kara_ch, GnMax, ch0_db, ch1_db, ch0_peak, ch1_peak)
         if not need_adj:
             print("ERR : cannot find suitable volume !!! ch0=", ch0_adj, "ch1=", ch1_adj,"\n")
-            err_filename='_ERR_'+filename+fileext
+            err_filename='_ERR0_'+filename+fileext
             rename_file(fullpath, err_filename)  # rename the file with '_ERR_"
             return ''
         org_filename='_ORG_'+filename+fileext
@@ -234,14 +252,14 @@ def volume_normalize(dirpath, filename, fileext, GnMax):
         rename_file(fullpath, org_filename) # rename orginal file with '_ORG_'
         print("rename ",fullpath," into ", org_filename)
         if not adj_volume(org_fullpath, fullpath, audio_no, ch0_adj, ch1_adj):
-            rename_file(org_fullpath, '_ERR'+org_filename)
+            rename_file(org_fullpath, '_ERR1'+org_filename)
             return ''
         [db, peak]=calculate_replaygain(fullpath, audio_no, kara_ch)
         gain=db_to_val(db)
         if (gain>GnMax):
             print("Error : after adjustment, the gain ",gain,"is still over Max",GnMax)
-            rename_file(org_fullpath, '_ERR'+org_filename)
-            return ''
+            rename_file(org_fullpath, '_OVR'+org_filename)
+            # the final file existed, just accept it and append gain value to filename
         
     gain_str=str(int(100*gain)).zfill(3)
     new_filename=filename+'_gn'+gain_str+fileext
