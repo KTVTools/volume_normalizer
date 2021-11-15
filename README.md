@@ -57,3 +57,6 @@
 [預設音量基準] : 音量基準值   
 
 
+如果執行時, 沒有安裝 Microsoft Access database driver, 會無法開啟 .mdb 檔案,
+可以到 https://www.microsoft.com/zh-tw/download/details.aspx?id=13255
+安裝 driver
