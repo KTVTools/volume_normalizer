@@ -2,6 +2,7 @@
   main_ui.py
   The main UI part for volume normalizer
   version : 1.0.0   2020/10/19
+  version : 1.1.0   2021/11/15
 
   This program will calculate the replaygain value
   for normalization and add "_gnXXX" to the file name.
@@ -31,8 +32,8 @@ import math
 import pyodbc
 import normalizer_core
 
-VERSION_INFO='1.0.0'
-DATE_INFO='2020/10/19'
+VERSION_INFO='1.1.0'
+DATE_INFO='2021/11/15'
 
 # define the file extension type to process
 ext_list = [".mpg", ".mpeg", ".vob", ".mkv", ".dat", '.mp4']
