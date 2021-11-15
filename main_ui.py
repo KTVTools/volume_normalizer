@@ -271,15 +271,18 @@ def updateDatabaseFile():
     if not (os.path.isfile(dbfilename.get())):
         MissingFileErrBox()
         return
-    conn = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=d:/temp/crazyktv/crazysong.mdb;')
+    conn = pyodbc.connect(r'Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ='+dbfilename.get()+';')
     cursor = conn.cursor()
     cursor.execute('select * from ktv_Song')
     
     gn_notfound_cnt=0
     gn_scaleover_cnt=0
     gn_valueover_cnt=0
+    gn_total_cnt=0
     for row in cursor.fetchall():
-        gnscale = find_gn(row[10])
+        #for item in row:
+        #    print(item)
+        gnscale = find_gn(row[9])
         if gnscale>999:
             gnscale=999
             gn_scaleover_cnt=gn_scaleover_cnt+1
@@ -292,9 +295,13 @@ def updateDatabaseFile():
                 gnvalue=99
                 gn_valueover_cnt=gn_valueover_cnt+1
             
-        cmd = "update ktv_Song set Song_Volume = "+str(gnvalue)+" where Song_Id = '"+row[1]+"'"
+        cmd = "update ktv_Song set Song_Volume = "+str(gnvalue)+" where Song_Id = '"+row[0]+"'"
         print(cmd, gnscale)    
         cursor.execute(cmd)
+        gn_total_cnt=gn_total_cnt+1
+        if gn_total_cnt==10000:
+            cursor.commit()
+            gn_total_cnt=0
     cursor.commit() 
     print("gain adjustment -\n not found:",gn_notfound_cnt,\
           "\n scale overflow:",gn_scaleover_cnt,"\n value overflow:",gn_valueover_cnt)
